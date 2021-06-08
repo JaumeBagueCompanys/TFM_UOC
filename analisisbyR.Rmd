@@ -1,0 +1,228 @@
+---
+title: "R Analisis"
+author: "Jaume Bagué Companys"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(readr)
+library(dplyr)
+library(biomformat)
+library(readxl)
+library(ggplot2)
+```
+
+# Analisis by R
+
+## Importing from Qiime2
+
+Our collapse table's format is in *.biom*. This fact requires a specific package for
+import our database: __"biomformat"__. 
+You can install it by BiocManager with: #BiocManager::install("biomformat")#
+
+```{r}
+tabla_biom="C:/Users/jaume/Documents/TFM_R/feature-table.biom" #Your path
+x1 = read_biom(tabla_biom)
+header(x1)
+head(colnames(x1))
+head(rownames(x1))
+matrix_element_type(x1)
+matrix_freq = as(biom_data(x1), "matrix")
+```
+
+On the other hand, list from Ancom is easier to import.
+
+```{r}
+ancom7 <- read_delim("ancom7.tsv", "\t", 
+                     escape_double = FALSE, trim_ws = TRUE)
+ancom7 = ancom7[1:7,1]
+ancom7 = c(unlist(ancom7))
+ancom7
+```
+
+
+## Filter table
+
+With next code, you can filter by columns, the taxons from your ancom in your table.
+
+```{r}
+data_freq = t(matrix_freq)
+prova = data_freq[,(colnames(data_freq) %in% c(ancom7))]
+```
+
+If you have problems, check:
+- Any name from any object do not contain any whitespace
+- Sometimes, matrix or data.frames can change **;** to **.**
+
+This code tries to do minimal manipulation for evade this problems. 
+
+## Join Metadata
+
+Import metadata
+```{r}
+metadata_RUN456 <- read_excel("metadata_RUN456.xlsx")
+```
+
+Add a key or rule to join. In this case, it's Animal code.
+
+```{r}
+animal = c(rownames(prova))
+prova = cbind.data.frame(prova, animal)
+prova=left_join(prova, metadata_RUN456, by = c("animal" = "#SampleID"))
+```
+
+
+## Automatic Graph
+
+
+Before to graph, you need to revise that your sample columns are numeric.
+
+```{r}
+str(prova)
+```
+
+If they are not numerical, you can run this loop.
+
+```{r}
+#for (i in 1:7){ # it's 1:x sample column
+#prova[,i] = as.numeric(prova[,i])
+#}
+```
+
+When your sample columns are numerical, you can run this loop
+to graph to external pdf.
+
+
+```{r}
+pdf("Rplot%01d.pdf")
+for (i in 1:7){
+  set.seed(i)
+  columnas = colnames(prova)[i]
+  p = ggplot(data = prova,aes(x = Day_Status, y = prova[ ,i], col = Day_Status ))+
+  geom_boxplot()+labs(title=columnas, x='Group', y='Relative Abundance' )
+  f=p + geom_dotplot(binaxis='y', stackdir='center', dotsize=0.2) +
+    theme(plot.title = element_text(size = 7, face = "bold"))
+  print(f)
+  }
+dev.off()
+restoreConsole = TRUE
+
+```
+
+
+# Study focused in Day 30
+
+In this case, Ancom from only Day 30 identified two new species
+that Ancom from along time didn't do. Fractioned data from group
+day 0, day 30 and day 60 will be filtered by this two species
+for study their evolution.
+
+
+## Importing data from Qimme2
+
+```{r}
+tabla_biom_0="C:/Users/jaume/Documents/TFM_R/feature-table_d0.biom"
+tabla_biom_30="C:/Users/jaume/Documents/TFM_R/feature-table_d30.biom"
+tabla_biom_60="C:/Users/jaume/Documents/TFM_R/feature-table_d60.biom"
+
+x1 = read_biom(tabla_biom_0)
+x2 = read_biom(tabla_biom_30)
+x3 = read_biom(tabla_biom_60)
+
+head(colnames(x1))
+head(colnames(x2))
+head(colnames(x3))
+
+head(rownames(x1))
+head(rownames(x2))
+head(rownames(x3))
+
+matrix_freq_0 = as(biom_data(x1), "matrix")
+matrix_freq_30 = as(biom_data(x2), "matrix")
+matrix_freq_60 = as(biom_data(x3), "matrix")
+
+ancom_day30_focused <- read_delim("ancom_day30_focused.tsv", 
+                                  "\t", escape_double = FALSE, trim_ws = TRUE)
+
+ancom2 = ancom_day30_focused[1:2,1]
+ancom2 = c(unlist(ancom2))
+ancom2
+
+```
+
+
+## Filtering tables
+
+```{r}
+
+data_freq = t(matrix_freq_0)
+prova1 = data_freq[,(colnames(data_freq) %in% c(ancom2))]
+data_freq = t(matrix_freq_30)
+prova2 = data_freq[,(colnames(data_freq) %in% c(ancom2))]
+data_freq = t(matrix_freq_60)
+prova3 = data_freq[,(colnames(data_freq) %in% c(ancom2))]
+
+```
+
+## Joining metadata
+
+```{r}
+animal1 = c(rownames(prova1))
+animal2 = c(rownames(prova2))
+animal3 = c(rownames(prova3))
+
+
+prova1 = cbind.data.frame(prova1, animal1)
+prova2 = cbind.data.frame(prova2, animal2)
+prova3 = cbind.data.frame(prova3, animal3)
+
+
+
+prova1=left_join(prova1, metadata_RUN456, by = c("animal1" = "#SampleID"))
+prova2=left_join(prova2, metadata_RUN456, by = c("animal2" = "#SampleID"))
+prova3=left_join(prova3, metadata_RUN456, by = c("animal3" = "#SampleID"))
+
+```
+
+
+## Merging tables
+
+
+```{r}
+prova1=prova1[,-3] ## Delete the unique different name column
+prova2=prova2[,-3]
+prova3=prova3[,-3]
+
+database = rbind(prova1, prova2, prova3)
+
+```
+
+## Print boxplots
+
+```{r}
+pdf("Rplot%02d.pdf")
+for (i in 1:2){
+  set.seed(i)
+  columnas = colnames(database)[i]
+  p = ggplot(data = database,aes(x = Day_Status, y = database[ ,i], col = Day_Status ))+
+    geom_boxplot()+labs(title=columnas, x='Group', y='Relative Abundance' )
+  f=p + geom_dotplot(binaxis='y', stackdir='center', dotsize=0.2) +
+    theme(plot.title = element_text(size = 7, face = "bold"))
+  print(f)
+}
+dev.off()
+restoreConsole = TRUE
+```
+
+
+
