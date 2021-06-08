@@ -1,0 +1,1220 @@
+#!/bin/bash
+
+
+
+conda activate qiime2-2020.2
+
+
+
+
+# Day_0
+
+
+mkdir TFM_d0
+
+###################################################################################################
+# Import sequences in qiime2
+
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path manif_RUN4_d0 \
+--output-path TFM_d0/paired-end-demux_RUN4.qza \
+--input-format PairedEndFastqManifestPhred33V2 
+
+
+qiime demux summarize \
+  --i-data TFM_d0/paired-end-demux_RUN4.qza \
+  --o-visualization TFM_d0/paired-end-demux_RUN4.qzv
+
+
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path manif_RUN5_d0 \
+--output-path TFM_d0/paired-end-demux_RUN5.qza \
+--input-format PairedEndFastqManifestPhred33V2 
+
+
+qiime demux summarize \
+  --i-data TFM_d0/paired-end-demux_RUN5.qza \
+  --o-visualization TFM_d0/paired-end-demux_RUN5.qzv
+
+
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path manif_RUN6_d0 \
+--output-path TFM_d0/paired-end-demux_RUN6.qza \
+--input-format PairedEndFastqManifestPhred33V2 
+
+
+qiime demux summarize \
+  --i-data TFM_d0/paired-end-demux_RUN6.qza \
+  --o-visualization TFM_d0/paired-end-demux_RUN6.qzv
+
+cd TFM_d0
+###################################################################################
+#DADA2 = Denoise and quality control
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux_RUN4.qza \
+  --p-trim-left-f 9 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 250 \
+  --p-trunc-len-r 240 \
+  --p-n-threads 0 \
+  --o-table table_RUN4.qza \
+  --o-representative-sequences rep-seqs_R4.qza \
+  --o-denoising-stats denoising-stats_R4.qza
+##output
+#tabla de frecuencias
+#secuencias a alinear
+#calidad del denoising = fijarse en non-chimeric para tener una estima de la profundidad a la que se puede bajar
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux_RUN5.qza \
+  --p-trim-left-f 9 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 250 \
+  --p-trunc-len-r 240 \
+  --p-n-threads 0 \
+  --o-table table_RUN5.qza \
+  --o-representative-sequences rep-seqs_R5.qza \
+  --o-denoising-stats denoising-stats_R5.qza  
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux_RUN6.qza \
+  --p-trim-left-f 9 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 250 \
+  --p-trunc-len-r 240 \
+  --p-n-threads 0 \
+  --o-table table_RUN6.qza \
+  --o-representative-sequences rep-seqs_R6.qza \
+  --o-denoising-stats denoising-stats_R6.qza  
+
+ ###################################################################################################
+#DIFFERENT RUN MERGING + RAREFACTION CURVE
+#Rarefaction curve is to set an appropiate sampling depth for downstream analysis
+
+# 1. Dada2 outputs merging
+ qiime feature-table merge \
+  --i-tables table_RUN4.qza \
+  --i-tables table_RUN5.qza \
+  --i-tables table_RUN6.qza \
+  --o-merged-table table-merged.qza
+
+cd .. 
+
+ qiime feature-table summarize \
+  --i-table TFM_d0/table-merged.qza \
+  --o-visualization TFM_d0/table-merged.qzv \
+  --m-sample-metadata-file metadata_day_0.tsv
+
+
+# 1b. Merge Representative sequences
+
+qiime feature-table merge-seqs \
+  --i-data TFM_d0/rep-seqs_R4.qza \
+  --i-data TFM_d0/rep-seqs_R5.qza \
+  --i-data TFM_d0/rep-seqs_R6.qza \
+  --o-merged-data TFM_d0/rep-seqs-merged.qza
+  
+qiime feature-table tabulate-seqs \
+  --i-data TFM_d0/rep-seqs-merged.qza \
+  --o-visualization TFM_d0/rep-seqs-merged.qzv
+
+
+# 1c. Denoising stats study
+
+qiime metadata tabulate \
+  --m-input-file TFM_d0/denoising-stats_R4.qza \
+  --o-visualization TFM_d0/denoising-stats_R4.qzv
+
+qiime metadata tabulate \
+  --m-input-file TFM_d0/denoising-stats_R5.qza \
+  --o-visualization TFM_d0/denoising-stats_R5.qzv
+ 
+ qiime metadata tabulate \
+  --m-input-file TFM_d0/denoising-stats_R6.qza \
+  --o-visualization TFM_d0/denoising-stats_R6.qzv 
+ 
+cd ..
+ 
+# 1d. Quality filter  
+
+mkdir ancom_divided_day/references
+
+ qiime tools import \
+  --type 'FeatureData[Sequence]' \
+  --input-path references/88_otus.fasta \
+  --output-path ancom_divided_day/references/88_otus.qza
+
+qiime quality-control exclude-seqs \
+  --i-query-sequences ancom_divided_day/TFM_d0/rep-seqs-merged.qza \
+  --i-reference-sequences ancom_divided_day/references/88_otus.qza \
+  --p-method vsearch \
+  --p-perc-identity 0.65 \
+  --p-perc-query-aligned 0.5 \
+  --p-threads 16 \
+  --o-sequence-hits ancom_divided_day/TFM_d0/rep-seqs-merged-hits88.qza \
+  --o-sequence-misses ancom_divided_day/TFM_d0/rep-seqs-merged-misses88.qza
+  
+  
+qiime feature-table tabulate-seqs \
+  --i-data ancom_divided_day/TFM_d0/rep-seqs-merged-hits88.qza \
+  --o-visualization ancom_divided_day/TFM_d0/rep-seqs-merged-hits88.qzv 
+  
+qiime feature-table tabulate-seqs \
+  --i-data ancom_divided_day/TFM_d0/rep-seqs-merged-misses88.qza \
+  --o-visualization ancom_divided_day/TFM_d0/rep-seqs-merged-misses88.qzv 
+ 
+ qiime feature-table filter-features \
+  --i-table ancom_divided_day/TFM_d0/table-merged.qza \
+  --m-metadata-file ancom_divided_day/TFM_d0/rep-seqs-merged-hits88.qza \
+  --o-filtered-table ancom_divided_day/TFM_d0/final-table-merged88.qza
+  
+qiime feature-table summarize \
+  --i-table ancom_divided_day/TFM_d0/final-table-merged88.qza  \
+  --o-visualization ancom_divided_day/TFM_d0/final-table-merged88.qzv
+
+###################################################################################################
+# 2. Tree generation
+
+# 2.1. Multiple sequence alignment with MAFFT
+qiime alignment mafft \
+--i-sequences ancom_divided_day/TFM_d0/rep-seqs-merged-hits88.qza  \
+--p-n-threads 'auto' \
+--o-alignment ancom_divided_day/TFM_d0/aligned-rep-seqs.qza 
+
+# 2.2. Masking the hypevariable positions in the alignement
+qiime alignment mask \
+  --i-alignment ancom_divided_day/TFM_d0/aligned-rep-seqs.qza \
+  --o-masked-alignment ancom_divided_day/TFM_d0/masked-aligned-rep-seqs.qza
+  
+# 2.3. Build phylogenetic tree with FastTree
+qiime phylogeny fasttree \
+  --i-alignment ancom_divided_day/TFM_d0/masked-aligned-rep-seqs.qza \
+  --o-tree ancom_divided_day/TFM_d0/unrooted-tree.qza \
+  --p-n-threads 'auto'
+
+# 2.4. Tree rooting
+qiime phylogeny midpoint-root \
+  --i-tree ancom_divided_day/TFM_d0/unrooted-tree.qza \
+  --o-rooted-tree ancom_divided_day/TFM_d0/rooted-tree.qza
+
+###################################################################################################
+
+
+# 3. CALCULOS
+###################################################################################
+
+#3.1. Fitering the table
+qiime feature-table filter-samples \
+  --i-table ancom_divided_day/TFM_d0/final-table-merged88.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_0.tsv \
+  --o-filtered-table ancom_divided_day/TFM_d0/table_d0.qza
+ 
+ qiime metadata tabulate \
+  --m-input-file ancom_divided_day/TFM_d0/table_d0.qza \
+  --o-visualization ancom_divided_day/TFM_d0/table_d0.qzv
+  
+  
+# Day_30
+
+cd ancom_divided_day
+
+mkdir TFM_d30
+
+###################################################################################################
+# Import sequences in qiime2
+
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path manif_RUN4_d30 \
+--output-path TFM_d30/paired-end-demux_RUN4.qza \
+--input-format PairedEndFastqManifestPhred33V2 
+
+
+qiime demux summarize \
+  --i-data TFM_d30/paired-end-demux_RUN4.qza \
+  --o-visualization TFM_d30/paired-end-demux_RUN4.qzv
+
+
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path manif_RUN5_d30 \
+--output-path TFM_d30/paired-end-demux_RUN5.qza \
+--input-format PairedEndFastqManifestPhred33V2 
+
+
+qiime demux summarize \
+  --i-data TFM_d30/paired-end-demux_RUN5.qza \
+  --o-visualization TFM_d30/paired-end-demux_RUN5.qzv
+
+
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path manif_RUN6_d30 \
+--output-path TFM_d30/paired-end-demux_RUN6.qza \
+--input-format PairedEndFastqManifestPhred33V2 
+
+
+qiime demux summarize \
+  --i-data TFM_d30/paired-end-demux_RUN6.qza \
+  --o-visualization TFM_d30/paired-end-demux_RUN6.qzv
+
+cd TFM_d30
+###################################################################################
+#DADA2 = Denoise and quality control
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux_RUN4.qza \
+  --p-trim-left-f 9 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 250 \
+  --p-trunc-len-r 240 \
+  --p-n-threads 0 \
+  --o-table table_RUN4.qza \
+  --o-representative-sequences rep-seqs_R4.qza \
+  --o-denoising-stats denoising-stats_R4.qza
+##output
+#tabla de frecuencias
+#secuencias a alinear
+#calidad del denoising = fijarse en non-chimeric para tener una estima de la profundidad a la que se puede bajar
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux_RUN5.qza \
+  --p-trim-left-f 9 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 250 \
+  --p-trunc-len-r 240 \
+  --p-n-threads 0 \
+  --o-table table_RUN5.qza \
+  --o-representative-sequences rep-seqs_R5.qza \
+  --o-denoising-stats denoising-stats_R5.qza  
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux_RUN6.qza \
+  --p-trim-left-f 9 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 250 \
+  --p-trunc-len-r 240 \
+  --p-n-threads 0 \
+  --o-table table_RUN6.qza \
+  --o-representative-sequences rep-seqs_R6.qza \
+  --o-denoising-stats denoising-stats_R6.qza  
+
+ ###################################################################################################
+#DIFFERENT RUN MERGING + RAREFACTION CURVE
+#Rarefaction curve is to set an appropiate sampling depth for downstream analysis
+
+# 1. Dada2 outputs merging
+ qiime feature-table merge \
+  --i-tables table_RUN4.qza \
+  --i-tables table_RUN5.qza \
+  --i-tables table_RUN6.qza \
+  --o-merged-table table-merged.qza
+
+cd .. 
+
+ qiime feature-table summarize \
+  --i-table TFM_d30/table-merged.qza \
+  --o-visualization TFM_d30/table-merged.qzv \
+  --m-sample-metadata-file metadata_day_30.tsv
+
+
+# 1b. Merge Representative sequences
+
+qiime feature-table merge-seqs \
+  --i-data TFM_d30/rep-seqs_R4.qza \
+  --i-data TFM_d30/rep-seqs_R5.qza \
+  --i-data TFM_d30/rep-seqs_R6.qza \
+  --o-merged-data TFM_d30/rep-seqs-merged.qza
+  
+qiime feature-table tabulate-seqs \
+  --i-data TFM_d30/rep-seqs-merged.qza \
+  --o-visualization TFM_d30/rep-seqs-merged.qzv
+
+
+# 1c. Denoising stats study
+
+qiime metadata tabulate \
+  --m-input-file TFM_d30/denoising-stats_R4.qza \
+  --o-visualization TFM_d30/denoising-stats_R4.qzv
+
+qiime metadata tabulate \
+  --m-input-file TFM_d30/denoising-stats_R5.qza \
+  --o-visualization TFM_d30/denoising-stats_R5.qzv
+ 
+ qiime metadata tabulate \
+  --m-input-file TFM_d30/denoising-stats_R6.qza \
+  --o-visualization TFM_d30/denoising-stats_R6.qzv 
+ 
+cd ..
+ 
+# 1d. Quality filter  
+
+ qiime tools import \
+  --type 'FeatureData[Sequence]' \
+  --input-path references/88_otus.fasta \
+  --output-path ancom_divided_day/references/88_otus.qza
+
+qiime quality-control exclude-seqs \
+  --i-query-sequences ancom_divided_day/TFM_d30/rep-seqs-merged.qza \
+  --i-reference-sequences ancom_divided_day/references/88_otus.qza \
+  --p-method vsearch \
+  --p-perc-identity 0.65 \
+  --p-perc-query-aligned 0.5 \
+  --p-threads 16 \
+  --o-sequence-hits ancom_divided_day/TFM_d30/rep-seqs-merged-hits88.qza \
+  --o-sequence-misses ancom_divided_day/TFM_d30/rep-seqs-merged-misses88.qza
+  
+  
+qiime feature-table tabulate-seqs \
+  --i-data ancom_divided_day/TFM_d30/rep-seqs-merged-hits88.qza \
+  --o-visualization ancom_divided_day/TFM_d30/rep-seqs-merged-hits88.qzv 
+  
+qiime feature-table tabulate-seqs \
+  --i-data ancom_divided_day/TFM_d30/rep-seqs-merged-misses88.qza \
+  --o-visualization ancom_divided_day/TFM_d30/rep-seqs-merged-misses88.qzv 
+ 
+ qiime feature-table filter-features \
+  --i-table ancom_divided_day/TFM_d30/table-merged.qza \
+  --m-metadata-file ancom_divided_day/TFM_d30/rep-seqs-merged-hits88.qza \
+  --o-filtered-table ancom_divided_day/TFM_d30/final-table-merged88.qza
+  
+qiime feature-table summarize \
+  --i-table ancom_divided_day/TFM_d30/final-table-merged88.qza  \
+  --o-visualization ancom_divided_day/TFM_d30/final-table-merged88.qzv
+
+###################################################################################################
+# 2. Tree generation
+
+# 2.1. Multiple sequence alignment with MAFFT
+qiime alignment mafft \
+--i-sequences ancom_divided_day/TFM_d30/rep-seqs-merged-hits88.qza  \
+--p-n-threads 'auto' \
+--o-alignment ancom_divided_day/TFM_d30/aligned-rep-seqs.qza 
+
+# 2.2. Masking the hypevariable positions in the alignement
+qiime alignment mask \
+  --i-alignment ancom_divided_day/TFM_d30/aligned-rep-seqs.qza \
+  --o-masked-alignment ancom_divided_day/TFM_d30/masked-aligned-rep-seqs.qza
+  
+# 2.3. Build phylogenetic tree with FastTree
+qiime phylogeny fasttree \
+  --i-alignment ancom_divided_day/TFM_d30/masked-aligned-rep-seqs.qza \
+  --o-tree ancom_divided_day/TFM_d30/unrooted-tree.qza \
+  --p-n-threads 'auto'
+
+# 2.4. Tree rooting
+qiime phylogeny midpoint-root \
+  --i-tree ancom_divided_day/TFM_d30/unrooted-tree.qza \
+  --o-rooted-tree ancom_divided_day/TFM_d30/rooted-tree.qza
+
+###################################################################################################
+
+
+# 3. CALCULOS
+###################################################################################
+
+#3.1. Fitering the table
+qiime feature-table filter-samples \
+  --i-table ancom_divided_day/TFM_d30/final-table-merged88.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --o-filtered-table ancom_divided_day/TFM_d30/table_d30.qza
+ 
+ qiime metadata tabulate \
+  --m-input-file ancom_divided_day/TFM_d30/table_d30.qza \
+  --o-visualization ancom_divided_day/TFM_d30/table_d30.qzv
+   
+
+
+# Day_60
+
+cd ancom_divided_day
+
+mkdir TFM_d60
+
+###################################################################################################
+# Import sequences in qiime2
+
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path manif_RUN4_d60 \
+--output-path TFM_d60/paired-end-demux_RUN4.qza \
+--input-format PairedEndFastqManifestPhred33V2 
+
+
+qiime demux summarize \
+  --i-data TFM_d60/paired-end-demux_RUN4.qza \
+  --o-visualization TFM_d60/paired-end-demux_RUN4.qzv
+
+
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path manif_RUN5_d60 \
+--output-path TFM_d60/paired-end-demux_RUN5.qza \
+--input-format PairedEndFastqManifestPhred33V2 
+
+
+qiime demux summarize \
+  --i-data TFM_d60/paired-end-demux_RUN5.qza \
+  --o-visualization TFM_d60/paired-end-demux_RUN5.qzv
+
+
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path manif_RUN6_d60 \
+--output-path TFM_d60/paired-end-demux_RUN6.qza \
+--input-format PairedEndFastqManifestPhred33V2 
+
+
+qiime demux summarize \
+  --i-data TFM_d60/paired-end-demux_RUN6.qza \
+  --o-visualization TFM_d60/paired-end-demux_RUN6.qzv
+
+cd TFM_d60
+###################################################################################
+#DADA2 = Denoise and quality control
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux_RUN4.qza \
+  --p-trim-left-f 9 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 250 \
+  --p-trunc-len-r 240 \
+  --p-n-threads 0 \
+  --o-table table_RUN4.qza \
+  --o-representative-sequences rep-seqs_R4.qza \
+  --o-denoising-stats denoising-stats_R4.qza
+##output
+#tabla de frecuencias
+#secuencias a alinear
+#calidad del denoising = fijarse en non-chimeric para tener una estima de la profundidad a la que se puede bajar
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux_RUN5.qza \
+  --p-trim-left-f 9 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 250 \
+  --p-trunc-len-r 240 \
+  --p-n-threads 0 \
+  --o-table table_RUN5.qza \
+  --o-representative-sequences rep-seqs_R5.qza \
+  --o-denoising-stats denoising-stats_R5.qza  
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux_RUN6.qza \
+  --p-trim-left-f 9 \
+  --p-trim-left-r 9 \
+  --p-trunc-len-f 250 \
+  --p-trunc-len-r 240 \
+  --p-n-threads 0 \
+  --o-table table_RUN6.qza \
+  --o-representative-sequences rep-seqs_R6.qza \
+  --o-denoising-stats denoising-stats_R6.qza  
+
+ ###################################################################################################
+#DIFFERENT RUN MERGING + RAREFACTION CURVE
+#Rarefaction curve is to set an appropiate sampling depth for downstream analysis
+
+# 1. Dada2 outputs merging
+ qiime feature-table merge \
+  --i-tables table_RUN4.qza \
+  --i-tables table_RUN5.qza \
+  --i-tables table_RUN6.qza \
+  --o-merged-table table-merged.qza
+
+cd .. 
+
+ qiime feature-table summarize \
+  --i-table TFM_d60/table-merged.qza \
+  --o-visualization TFM_d60/table-merged.qzv \
+  --m-sample-metadata-file metadata_day_60.tsv
+
+
+# 1b. Merge Representative sequences
+
+qiime feature-table merge-seqs \
+  --i-data TFM_d60/rep-seqs_R4.qza \
+  --i-data TFM_d60/rep-seqs_R5.qza \
+  --i-data TFM_d60/rep-seqs_R6.qza \
+  --o-merged-data TFM_d60/rep-seqs-merged.qza
+  
+qiime feature-table tabulate-seqs \
+  --i-data TFM_d60/rep-seqs-merged.qza \
+  --o-visualization TFM_d60/rep-seqs-merged.qzv
+
+
+# 1c. Denoising stats study
+
+qiime metadata tabulate \
+  --m-input-file TFM_d60/denoising-stats_R4.qza \
+  --o-visualization TFM_d60/denoising-stats_R4.qzv
+
+qiime metadata tabulate \
+  --m-input-file TFM_d60/denoising-stats_R5.qza \
+  --o-visualization TFM_d60/denoising-stats_R5.qzv
+ 
+ qiime metadata tabulate \
+  --m-input-file TFM_d60/denoising-stats_R6.qza \
+  --o-visualization TFM_d60/denoising-stats_R6.qzv 
+ 
+cd ..
+ 
+# 1d. Quality filter  
+
+ qiime tools import \
+  --type 'FeatureData[Sequence]' \
+  --input-path references/88_otus.fasta \
+  --output-path ancom_divided_day/references/88_otus.qza
+
+qiime quality-control exclude-seqs \
+  --i-query-sequences ancom_divided_day/TFM_d60/rep-seqs-merged.qza \
+  --i-reference-sequences ancom_divided_day/references/88_otus.qza \
+  --p-method vsearch \
+  --p-perc-identity 0.65 \
+  --p-perc-query-aligned 0.5 \
+  --p-threads 16 \
+  --o-sequence-hits ancom_divided_day/TFM_d60/rep-seqs-merged-hits88.qza \
+  --o-sequence-misses ancom_divided_day/TFM_d60/rep-seqs-merged-misses88.qza
+  
+  
+qiime feature-table tabulate-seqs \
+  --i-data ancom_divided_day/TFM_d60/rep-seqs-merged-hits88.qza \
+  --o-visualization ancom_divided_day/TFM_d60/rep-seqs-merged-hits88.qzv 
+  
+qiime feature-table tabulate-seqs \
+  --i-data ancom_divided_day/TFM_d60/rep-seqs-merged-misses88.qza \
+  --o-visualization ancom_divided_day/TFM_d60/rep-seqs-merged-misses88.qzv 
+ 
+ qiime feature-table filter-features \
+  --i-table ancom_divided_day/TFM_d60/table-merged.qza \
+  --m-metadata-file ancom_divided_day/TFM_d60/rep-seqs-merged-hits88.qza \
+  --o-filtered-table ancom_divided_day/TFM_d60/final-table-merged88.qza
+  
+qiime feature-table summarize \
+  --i-table ancom_divided_day/TFM_d60/final-table-merged88.qza  \
+  --o-visualization ancom_divided_day/TFM_d60/final-table-merged88.qzv
+
+###################################################################################################
+# 2. Tree generation
+
+# 2.1. Multiple sequence alignment with MAFFT
+qiime alignment mafft \
+--i-sequences ancom_divided_day/TFM_d60/rep-seqs-merged-hits88.qza  \
+--p-n-threads 'auto' \
+--o-alignment ancom_divided_day/TFM_d60/aligned-rep-seqs.qza 
+
+# 2.2. Masking the hypevariable positions in the alignement
+qiime alignment mask \
+  --i-alignment ancom_divided_day/TFM_d60/aligned-rep-seqs.qza \
+  --o-masked-alignment ancom_divided_day/TFM_d60/masked-aligned-rep-seqs.qza
+  
+# 2.3. Build phylogenetic tree with FastTree
+qiime phylogeny fasttree \
+  --i-alignment ancom_divided_day/TFM_d60/masked-aligned-rep-seqs.qza \
+  --o-tree ancom_divided_day/TFM_d60/unrooted-tree.qza \
+  --p-n-threads 'auto'
+
+# 2.4. Tree rooting
+qiime phylogeny midpoint-root \
+  --i-tree ancom_divided_day/TFM_d60/unrooted-tree.qza \
+  --o-rooted-tree ancom_divided_day/TFM_d60/rooted-tree.qza
+
+###################################################################################################
+
+
+# 3. CALCULOS
+###################################################################################
+
+#3.1. Fitering the table
+qiime feature-table filter-samples \
+  --i-table ancom_divided_day/TFM_d60/final-table-merged88.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_60.tsv \
+  --o-filtered-table ancom_divided_day/TFM_d60/table_d60.qza
+ 
+ qiime metadata tabulate \
+  --m-input-file ancom_divided_day/TFM_d60/table_d60.qza \
+  --o-visualization ancom_divided_day/TFM_d60/table_d60.qzv
+   
+###################################################################################################
+
+
+
+# 4.2 Clasification
+### D0
+qiime feature-classifier classify-sklearn \
+  --i-classifier training-feature-classifiers/classifier.qza \
+  --i-reads ancom_divided_day/TFM_d0/rep-seqs-merged-hits88.qza \
+  --o-classification ancom_divided_day/TFM_d0/taxonomy_d0.qza \
+  --p-n-jobs 16
+
+qiime metadata tabulate \
+  --m-input-file ancom_divided_day/TFM_d0/taxonomy_d0.qza \
+  --o-visualization ancom_divided_day/TFM_d0/taxonomy_d0.qzv
+  
+### D30  
+qiime feature-classifier classify-sklearn \
+  --i-classifier training-feature-classifiers/classifier.qza \
+  --i-reads ancom_divided_day/TFM_d30/rep-seqs-merged-hits88.qza \
+  --o-classification ancom_divided_day/TFM_d30/taxonomy_d30.qza \
+  --p-n-jobs 16
+
+qiime metadata tabulate \
+  --m-input-file ancom_divided_day/TFM_d30/taxonomy_d30.qza \
+  --o-visualization ancom_divided_day/TFM_d30/taxonomy_d30.qzv
+  
+### D60
+qiime feature-classifier classify-sklearn \
+  --i-classifier training-feature-classifiers/classifier.qza \
+  --i-reads ancom_divided_day/TFM_d60/rep-seqs-merged-hits88.qza \
+  --o-classification ancom_divided_day/TFM_d60/taxonomy_d60.qza \
+  --p-n-jobs 16
+
+qiime metadata tabulate \
+  --m-input-file ancom_divided_day/TFM_d60/taxonomy_d60.qza \
+  --o-visualization ancom_divided_day/TFM_d60/taxonomy_d60.qzv
+  
+
+
+
+# 5. ANCOM
+mkdir ancom_divided_day/ancom
+mkdir ancom_divided_day/ancom/day0
+mkdir ancom_divided_day/ancom/day30
+mkdir ancom_divided_day/ancom/day60
+
+
+qiime feature-table filter-features \
+  --i-table ancom_divided_day/TFM_d0/final-table-merged88.qza \
+  --p-min-frequency 10 \
+  --o-filtered-table ancom_divided_day/ancom/day0/table_filt_d0.qza
+
+qiime feature-table filter-features \
+  --i-table ancom_divided_day/TFM_d30/final-table-merged88.qza \
+  --p-min-frequency 10 \
+  --o-filtered-table ancom_divided_day/ancom/day30/table_filt_d30.qza
+
+qiime feature-table filter-features \
+  --i-table ancom_divided_day/TFM_d60/final-table-merged88.qza \
+  --p-min-frequency 10 \
+  --o-filtered-table ancom_divided_day/ancom/day60/table_filt_d60.qza
+
+
+## Day 0
+
+#ancon lvl_2
+
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day0/table_filt_d0.qza \
+--i-taxonomy ancom_divided_day/TFM_d0/taxonomy_d0.qza  \
+--p-level 2 \
+--o-collapsed-table ancom_divided_day/ancom/day0/table_filtered-l2.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day0/table_filtered-l2.qza \
+  --o-composition-table ancom_divided_day/ancom/day0/comp-table_filtered-l2.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day0/comp-table_filtered-l2.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_0.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day0/ancom-lvl2.qzv 
+ 
+ #ancom lvl_3
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day0/table_filt_d0.qza \
+--i-taxonomy ancom_divided_day/TFM_d0/taxonomy_d0.qza  \
+--p-level 3 \
+--o-collapsed-table ancom_divided_day/ancom/day0/table_filtered-l3.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day0/table_filtered-l3.qza \
+  --o-composition-table ancom_divided_day/ancom/day0/comp-table_filtered-l3.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day0/comp-table_filtered-l3.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_0.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day0/ancom-lvl3.qzv 
+ 
+ #ancom lvl_4
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day0/table_filt_d0.qza \
+--i-taxonomy ancom_divided_day/TFM_d0/taxonomy_d0.qza  \
+--p-level 4 \
+--o-collapsed-table ancom_divided_day/ancom/day0/table_filtered-l4.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day0/table_filtered-l4.qza \
+  --o-composition-table ancom_divided_day/ancom/day0/comp-table_filtered-l4.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day0/comp-table_filtered-l4.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_0.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day0/ancom-lvl4.qzv 
+ 
+ 
+ #ancom lvl_5
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day0/table_filt_d0.qza \
+--i-taxonomy ancom_divided_day/TFM_d0/taxonomy_d0.qza  \
+--p-level 5 \
+--o-collapsed-table ancom_divided_day/ancom/day0/table_filtered-l5.qza
+ 
+qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day0/table_filtered-l5.qza \
+  --o-composition-table ancom_divided_day/ancom/day0/comp-table_filtered-l5.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day0/comp-table_filtered-l5.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_0.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day0/ancom-lvl5.qzv 
+ 
+#ancom lvl_6
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day0/table_filt_d0.qza \
+--i-taxonomy ancom_divided_day/TFM_d0/taxonomy_d0.qza  \
+--p-level 6 \
+--o-collapsed-table ancom_divided_day/ancom/day0/table_filtered-l6.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day0/table_filtered-l6.qza \
+  --o-composition-table ancom_divided_day/ancom/day0/comp-table_filtered-l6.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day0/comp-table_filtered-l6.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_0.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day0/ancom-lvl6.qzv 
+ 
+#ancom lvl_7 
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day0/table_filt_d0.qza \
+--i-taxonomy ancom_divided_day/TFM_d0/taxonomy_d0.qza  \
+--p-level 7 \
+--o-collapsed-table ancom_divided_day/ancom/day0/table_filtered-l7.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day0/table_filtered-l7.qza \
+  --o-composition-table ancom_divided_day/ancom/day0/comp-table_filtered-l7.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day0/comp-table_filtered-l7.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_0.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day0/ancom-lvl7.qzv 
+ 
+ 
+## Day 30 - Condition
+ 
+ 
+#ancon lvl_2
+
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 2 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l2.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l2.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l2.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l2.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl2.qzv 
+ 
+ #ancom lvl_3
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 3 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l3.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l3.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l3.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l3.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl3.qzv 
+ 
+ #ancom lvl_4
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 4 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l4.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l4.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l4.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l4.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl4.qzv 
+ 
+ 
+ #ancom lvl_5
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 5 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l5.qza
+ 
+qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l5.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l5.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l5.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl5.qzv 
+ 
+#ancom lvl_6
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 6 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l6.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l6.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l6.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l6.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl6.qzv 
+ 
+#ancom lvl_7 
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 7 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l7.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l7.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l7.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l7.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl7.qzv 
+
+
+## Day 30 - Status
+
+#ancom lvl_2
+ 
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 2 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l2.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l2.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l2.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l2.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Day_Status \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl2-ds.qzv 
+ 
+ #ancom lvl_3
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 3 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l3.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l3.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l3.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l3.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Day_Status \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl3-ds.qzv 
+ 
+ #ancom lvl_4
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 4 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l4.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l4.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l4.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l4.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Day_Status \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl4-ds.qzv 
+ 
+ 
+#ancom lvl_5
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 5 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l5.qza
+ 
+qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l5.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l5.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l5.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Day_Status \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl5-ds.qzv 
+ 
+#ancom lvl_6
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 6 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l6.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l6.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l6.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l6.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Day_Status \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl6-ds.qzv 
+ 
+#ancom lvl_7 
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day30/table_filt_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 7 \
+--o-collapsed-table ancom_divided_day/ancom/day30/table_filtered-l7.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day30/table_filtered-l7.qza \
+  --o-composition-table ancom_divided_day/ancom/day30/comp-table_filtered-l7.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day30/comp-table_filtered-l7.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_30.tsv \
+  --m-metadata-column Day_Status \
+  --o-visualization ancom_divided_day/ancom/day30/ancom-lvl7-ds.qzv 
+ 
+
+ ## Day 60
+ 
+#ancom lvl_2
+
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day60/table_filt_d60.qza \
+--i-taxonomy ancom_divided_day/TFM_d60/taxonomy_d60.qza  \
+--p-level 2 \
+--o-collapsed-table ancom_divided_day/ancom/day60/table_filtered-l2.qza
+ 
+qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day60/table_filtered-l2.qza \
+  --o-composition-table ancom_divided_day/ancom/day60/comp-table_filtered-l2.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day60/comp-table_filtered-l2.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_60.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day60/ancom-lvl2.qzv 
+ 
+#ancom lvl_3
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day60/table_filt_d60.qza \
+--i-taxonomy ancom_divided_day/TFM_d60/taxonomy_d60.qza  \
+--p-level 3 \
+--o-collapsed-table ancom_divided_day/ancom/day60/table_filtered-l3.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day60/table_filtered-l3.qza \
+  --o-composition-table ancom_divided_day/ancom/day60/comp-table_filtered-l3.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day60/comp-table_filtered-l3.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_60.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day60/ancom-lvl3.qzv 
+ 
+ #ancom lvl_4
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day60/table_filt_d60.qza \
+--i-taxonomy ancom_divided_day/TFM_d60/taxonomy_d60.qza  \
+--p-level 4 \
+--o-collapsed-table ancom_divided_day/ancom/day60/table_filtered-l4.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day60/table_filtered-l4.qza \
+  --o-composition-table ancom_divided_day/ancom/day60/comp-table_filtered-l4.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day60/comp-table_filtered-l4.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_60.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day60/ancom-lvl4.qzv 
+ 
+ 
+ #ancom lvl_5
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day60/table_filt_d60.qza \
+--i-taxonomy ancom_divided_day/TFM_d60/taxonomy_d60.qza  \
+--p-level 5 \
+--o-collapsed-table ancom_divided_day/ancom/day60/table_filtered-l5.qza
+ 
+qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day60/table_filtered-l5.qza \
+  --o-composition-table ancom_divided_day/ancom/day60/comp-table_filtered-l5.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day60/comp-table_filtered-l5.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_60.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day60/ancom-lvl5.qzv 
+ 
+#ancom lvl_6
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day60/table_filt_d60.qza \
+--i-taxonomy ancom_divided_day/TFM_d60/taxonomy_d60.qza  \
+--p-level 6 \
+--o-collapsed-table ancom_divided_day/ancom/day60/table_filtered-l6.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day60/table_filtered-l6.qza \
+  --o-composition-table ancom_divided_day/ancom/day60/comp-table_filtered-l6.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day60/comp-table_filtered-l6.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_60.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day60/ancom-lvl6.qzv 
+ 
+#ancom lvl_7 
+ 
+qiime taxa collapse \
+--i-table ancom_divided_day/ancom/day60/table_filt_d60.qza \
+--i-taxonomy ancom_divided_day/TFM_d60/taxonomy_d60.qza  \
+--p-level 7 \
+--o-collapsed-table ancom_divided_day/ancom/day60/table_filtered-l7.qza
+ 
+ qiime composition add-pseudocount \
+  --i-table ancom_divided_day/ancom/day60/table_filtered-l7.qza \
+  --o-composition-table ancom_divided_day/ancom/day60/comp-table_filtered-l7.qza
+ 
+qiime composition ancom \
+  --i-table ancom_divided_day/ancom/day60/comp-table_filtered-l7.qza \
+  --m-metadata-file ancom_divided_day/metadata_day_60.tsv \
+  --m-metadata-column Condition \
+  --o-visualization ancom_divided_day/ancom/day60/ancom-lvl7.qzv 
+ 
+
+
+# 6. Frecuencias relativas + Collapse
+
+mkdir ancom_divided_day/abundance
+
+qiime taxa collapse \
+--i-table ancom_divided_day/TFM_d0/table_d0.qza \
+--i-taxonomy ancom_divided_day/TFM_d0/taxonomy_d0.qza  \
+--p-level 7 \
+--o-collapsed-table ancom_divided_day/abundance/tabla_collap_d0.qza
+ 
+qiime feature-table relative-frequency \
+--i-table ancom_divided_day/abundance/tabla_collap_d0.qza \
+--output-dir ancom_divided_day/abundance/tabla_freq_d0
+
+
+qiime taxa collapse \
+--i-table ancom_divided_day/TFM_d30/table_d30.qza \
+--i-taxonomy ancom_divided_day/TFM_d30/taxonomy_d30.qza  \
+--p-level 7 \
+--o-collapsed-table ancom_divided_day/abundance/tabla_collap_d30.qza
+ 
+qiime feature-table relative-frequency \
+--i-table ancom_divided_day/abundance/tabla_collap_d30.qza \
+--output-dir ancom_divided_day/abundance/tabla_freq_d30
+
+
+qiime taxa collapse \
+--i-table ancom_divided_day/TFM_d60/table_d60.qza \
+--i-taxonomy ancom_divided_day/TFM_d60/taxonomy_d60.qza  \
+--p-level 7 \
+--o-collapsed-table ancom_divided_day/abundance/tabla_collap_d60.qza
+ 
+qiime feature-table relative-frequency \
+--i-table ancom_divided_day/abundance/tabla_collap_d60.qza \
+--output-dir ancom_divided_day/abundance/tabla_freq_d60
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+ 
